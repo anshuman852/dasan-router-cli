@@ -31,7 +31,7 @@ docker run -d --name dasan-exporter \
   -e DASAN_USERNAME=admin \
   -e DASAN_PASSWORD=yourpassword \
   -p 9800:9800 \
-  ghcr.io/anshuman852/dasan-router-cli:latest
+  ghcr.io/anshuman852/dasan-exporter:latest
 ```
 
 Point Prometheus at `http://<host>:9800/metrics`, then import
