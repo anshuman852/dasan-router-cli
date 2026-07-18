@@ -1,5 +1,5 @@
 # =============================================================================
-# Build and publish the multi-arch Docker image to GitHub Container Registry
+# Build multi-arch Docker image, push to GHCR, and create GitHub releases
 # =============================================================================
 name: docker-publish
 
@@ -14,6 +14,9 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/dasan-exporter
 
 jobs:
+  # ------------------------------------------------------------------
+  # Build and push multi-arch Docker image
+  # ------------------------------------------------------------------
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -43,9 +46,13 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            # main branch: latest + commit SHA
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,enable={{is_default_branch}}
-            type=ref,event=tag
+            # semver tags: v1.2.3 -> 1.2.3, 1.2, 1
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
@@ -57,3 +64,20 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ------------------------------------------------------------------
+  # Create GitHub release with auto-generated changelog (tags only)
+  # ------------------------------------------------------------------
+  release:
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          make_latest: true
