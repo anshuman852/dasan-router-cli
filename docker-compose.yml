@@ -1,0 +1,51 @@
+services:
+  dasan:
+    build: .
+    image: ghcr.io/anshuman852/dasan:latest
+    container_name: dasan-exporter
+    restart: unless-stopped
+    ports:
+      - "9800:9800"
+    environment:
+      DASAN_HOST: ${DASAN_HOST:-192.168.1.1}
+      DASAN_USERNAME: ${DASAN_USERNAME:-admin}
+      DASAN_PASSWORD: ${DASAN_PASSWORD:?DASAN_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "/dasan serve --help"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional: full monitoring stack (Prometheus + Grafana)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: dasan-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dasan-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    profiles:
+      - monitoring
+
+volumes:
+  prometheus-data:
+  grafana-data:
