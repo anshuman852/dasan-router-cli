@@ -50,7 +50,7 @@ dasan status lan                       # LAN port link status
 dasan status clients                   # DHCP leases / connected devices
 
 dasan wifi list                        # SSIDs (--show-password to reveal passphrases)
-dasan wifi set 1 --ssid MyWifi --password NewPass123
+dasan wifi set 1 --ssid MyWifi --key NewPass123
 dasan wifi macfilter-list              # MAC allow/deny list per band
 dasan wifi schedule-show               # WiFi auto-refresh schedule
 dasan wifi mesh-status                 # mesh config (needs mesh-capable hardware)
@@ -81,27 +81,68 @@ dasan reboot                             # asks for confirmation; -y to skip
 dasan raw get DeviceInfo                 # escape hatch for any objs=... endpoint
 dasan serve                              # start Prometheus metrics exporter
 dasan version                            # print version
+
+dasan auth login                         # save credentials for auto-auth
+dasan auth logout                        # remove saved credentials
+dasan auth status                        # show saved config
 ```
 
 Credentials: pass `--user`/`--password`, set `DASAN_USER`/`DASAN_PASS`, or
-you'll be prompted. The auth token is cached in `~/.dasan-session.json`
-(mode 600) and reused until it expires (~30 min), so most commands only need
-to log in once per session.
+run `dasan auth login` once to save credentials to `~/.dasan-config.json`.
+After that, all commands work without any flags — auth is automatic.
 
 `--host` defaults to `192.168.1.1`; pass a different IP if yours differs.
+
+## Docker
+
+```bash
+# Single binary in scratch image (~12 MB, amd64 + arm64)
+docker run -d --name dasan \
+  -e DASAN_HOST=192.168.1.1 \
+  -e DASAN_USERNAME=admin \
+  -e DASAN_PASSWORD=yourpassword \
+  -p 9800:9800 \
+  ghcr.io/anshuman852/dasan:latest
+```
+
+Or use docker-compose:
+
+```bash
+# Just the exporter
+make compose-up
+
+# Exporter + Prometheus + Grafana
+make compose-up-monitoring
+# Grafana at http://localhost:3000 (admin/admin)
+```
+
+Import `dasan-dashboard.json` into Grafana for a pre-built dashboard with
+gauges, timeseries, and status indicators for all 21 metrics.
+
+## Makefile
+
+```
+make build              # build binary
+make run                # build + run exporter
+make docker-build       # single-arch Docker image
+make docker-build-multi # multi-arch (amd64 + arm64)
+make compose-up         # start via docker-compose
+make ci                 # tidy → lint → test → build
+make help               # show all targets
+```
 
 ## Project layout
 
 ```
 cmd/dasan/
-  main.go               entry point, cobra root command
+  main.go               entry point, cobra root command + auth subcommands
 internal/
   client/
-    client.go            enhanced API client: auth, CSRF, session cache, read/write/delete
+    client.go            API client: auth, CSRF, session cache, read/write/delete
   collector/
     collector.go          Prometheus metrics + collection logic
   exporter/
-    serve.go              HTTP server + metrics endpoint
+    serve.go              HTTP server + /metrics endpoint
   cli/
     status.go             device info, WAN/LAN, DHCP clients
     wifi.go               SSID list/set, MAC filter, auto-refresh schedule, mesh
@@ -111,9 +152,13 @@ internal/
     context.go             global client reference
     utils.go               table rendering, formatting helpers
 Dockerfile                 Multi-arch Go build → scratch (~12 MB image)
+docker-compose.yml         Exporter + optional Prometheus/Grafana stack
+Makefile                   Build, run, Docker, compose targets
+dasan-dashboard.json       Pre-built Grafana dashboard
+.goreleaser.yml            Cross-platform binary release config
 .github/workflows/
-  docker-publish.yml       CI: build & push Docker image to ghcr.io
-  release.yml              CI: GoReleaser cross-platform binaries
+  docker-publish.yml       CI: build & push multi-arch Docker to ghcr.io
+  release.yml              CI: GoReleaser → binaries + GitHub release
 ```
 
 ## Known limitations (found via live testing against one H660GM-A unit)
