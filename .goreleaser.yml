@@ -1,0 +1,65 @@
+# =============================================================================
+# GoReleaser configuration — cross-platform binaries attached to GitHub releases
+# =============================================================================
+version: 2
+
+project_name: dasan-exporter
+
+builds:
+  - id: dasan-exporter
+    dir: go-exporter
+    binary: dasan-exporter
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    builds:
+      - dasan-exporter
+    name_template: >-
+      dasan-exporter_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - go-exporter/dasan-dashboard.json
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+      - "^test:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: anshuman852
+    name: dasan-router-cli
+  prerelease: auto
+  mode: append

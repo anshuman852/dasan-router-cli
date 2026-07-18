@@ -13,6 +13,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// Set by GoReleaser via ldflags at build time.
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 func main() {
 	// ---- CLI flags ----
 	host := flag.String("host", envDefault("DASAN_HOST", "192.168.1.1"), "Router IP/hostname")
@@ -20,7 +27,13 @@ func main() {
 	password := flag.String("password", envDefault("DASAN_PASSWORD", ""), "Router login password")
 	port := flag.Int("port", 9800, "Exporter HTTP listen port")
 	interval := flag.Int("interval", 60, "Scrape interval in seconds")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("dasan-exporter %s (commit %s, built %s)\n", version, commit, date)
+		os.Exit(0)
+	}
 
 	if *username == "" || *password == "" {
 		log.Fatal("Username and password are required. Set DASAN_USERNAME/DASAN_PASSWORD or use -username/-password.")
