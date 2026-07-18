@@ -1,7 +1,8 @@
-package main
+// Package collector implements Prometheus metric collection from the
+// Dasan/Airtel router API.
+package collector
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/anshuman852/dasan/internal/client"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,85 +23,20 @@ import (
 // routerData is returned by DasanClient.Get — either map[string]any or []any.
 type routerData = any
 
-// toObj asserts the router data is a single object (map).
-func toObj(d routerData) (map[string]any, error) {
-	m, ok := d.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("expected map, got %T", d)
-	}
-	return m, nil
-}
-
-// toArr asserts the router data is an array.
-func toArr(d routerData) ([]any, error) {
-	a, ok := d.([]any)
-	if !ok {
-		return nil, fmt.Errorf("expected array, got %T", d)
-	}
-	return a, nil
-}
-
 // getStr returns the string value for key from m, or "".
 func getStr(m map[string]any, key string) string {
-	v, ok := m[key]
-	if !ok {
-		return ""
-	}
-	s, ok := v.(string)
-	if !ok {
-		return fmt.Sprintf("%v", v)
-	}
-	return s
+	return client.GetStr(m, key)
 }
 
 // getFloat returns the numeric value for key from m, handling string, float,
 // int, and bool representations. Returns 0 on failure.
 func getFloat(m map[string]any, key string) float64 {
-	v, ok := m[key]
-	if !ok {
-		return 0
-	}
-	switch t := v.(type) {
-	case float64:
-		return t
-	case json.Number: // some JSON decoders use this — handle it
-		f, _ := t.Float64()
-		return f
-	case bool:
-		if t {
-			return 1
-		}
-		return 0
-	case string:
-		// Try as float first, then as bool
-		if f, err := strconv.ParseFloat(t, 64); err == nil {
-			return f
-		}
-		if t == "true" || t == "True" || t == "Up" {
-			return 1
-		}
-		return 0
-	default:
-		return 0
-	}
+	return client.GetFloat(m, key)
 }
 
 // getBool returns true for truthy values (bool true, string "true"/"True"/"Up", int 1).
 func getBool(m map[string]any, key string) bool {
-	v, ok := m[key]
-	if !ok {
-		return false
-	}
-	switch t := v.(type) {
-	case bool:
-		return t
-	case float64:
-		return t != 0
-	case string:
-		return t == "true" || t == "True" || t == "Up" || t == "yes" || t == "1"
-	default:
-		return false
-	}
+	return client.GetBool(m, key)
 }
 
 // parseSpeed extracts the numeric Mbps from a LAN mode string like "1000M-Full".
@@ -121,7 +59,6 @@ func parseSpeed(mode string) float64 {
 // Prometheus metrics
 // ---------------------------------------------------------------------------
 
-// We use promauto for brevity — metrics are registered automatically.
 var (
 	// ---- Device Health ----
 	deviceUptimeSeconds = promauto.NewGauge(prometheus.GaugeOpts{
@@ -236,21 +173,21 @@ var connStatusMap = map[string]float64{
 // ---------------------------------------------------------------------------
 
 const (
-	fastInterval = 0       // collect every scrape
-	slowInterval = 300     // 5 minutes
+	fastInterval = 0   // collect every scrape
+	slowInterval = 300 // 5 minutes
 )
 
 // Collector holds the DasanClient and last-collected timestamps.
 type Collector struct {
-	client        *DasanClient
+	client        *client.DasanClient
 	lastCollected map[string]time.Time
 	mu            sync.Mutex
 }
 
 // NewCollector creates a Collector backed by the given client.
-func NewCollector(client *DasanClient) *Collector {
+func NewCollector(cl *client.DasanClient) *Collector {
 	return &Collector{
-		client:        client,
+		client:        cl,
 		lastCollected: make(map[string]time.Time),
 	}
 }
@@ -294,7 +231,7 @@ func (c *Collector) markCollected(key string) {
 }
 
 // safeGet fetches objs from the router, tracks duration and status, and
-// respects the interval gate. Returns nil,nil when skipped or on error.
+// respects the interval gate. Returns nil when skipped or on error.
 func (c *Collector) safeGet(objs, page string, interval time.Duration) routerData {
 	if !c.shouldCollect(objs, interval) {
 		return nil
@@ -325,7 +262,7 @@ func (c *Collector) collectDeviceInfo() {
 	if data == nil {
 		return
 	}
-	obj, err := toObj(data)
+	obj, err := client.ToObj(data)
 	if err != nil {
 		log.Printf("DeviceInfo: %v", err)
 		return
@@ -341,7 +278,7 @@ func (c *Collector) collectPonStatus() {
 	if data == nil {
 		return
 	}
-	obj, err := toObj(data)
+	obj, err := client.ToObj(data)
 	if err != nil {
 		log.Printf("PonPortStatus: %v", err)
 		return
@@ -359,7 +296,7 @@ func (c *Collector) collectWAN() {
 	// IP connections
 	ipData := c.safeGet("WANIPConnection", "AdvancedSetupPage-WANConnection", fastInterval)
 	if ipData != nil {
-		arr, err := toArr(ipData)
+		arr, err := client.ToArr(ipData)
 		if err == nil {
 			for _, item := range arr {
 				conn, ok := item.(map[string]any)
@@ -377,7 +314,7 @@ func (c *Collector) collectWAN() {
 	// PPPoE connections
 	pppData := c.safeGet("WANPPPConnection", "AdvancedSetupPage-WANConnection", fastInterval)
 	if pppData != nil {
-		arr, err := toArr(pppData)
+		arr, err := client.ToArr(pppData)
 		if err == nil {
 			for _, item := range arr {
 				conn, ok := item.(map[string]any)
@@ -398,7 +335,7 @@ func (c *Collector) collectLANPorts() {
 	if data == nil {
 		return
 	}
-	arr, err := toArr(data)
+	arr, err := client.ToArr(data)
 	if err != nil {
 		log.Printf("LANPortStatus: %v", err)
 		return
@@ -429,7 +366,7 @@ func (c *Collector) collectDHCP() {
 	if data == nil {
 		return
 	}
-	arr, err := toArr(data)
+	arr, err := client.ToArr(data)
 	if err != nil {
 		log.Printf("DhcpLease: %v", err)
 		return
@@ -442,7 +379,7 @@ func (c *Collector) collectWiFi() {
 	if data == nil {
 		return
 	}
-	arr, err := toArr(data)
+	arr, err := client.ToArr(data)
 	if err != nil {
 		log.Printf("WLANConfiguration: %v", err)
 		return
@@ -467,7 +404,7 @@ func (c *Collector) collectFirewall() {
 	totalPF := 0.0
 	wanData := c.safeGet("WANObject", "AdvancedSetupPage-WANConnection", fastInterval)
 	if wanData != nil {
-		arr, err := toArr(wanData)
+		arr, err := client.ToArr(wanData)
 		if err == nil {
 			for _, item := range arr {
 				wan, ok := item.(map[string]any)
@@ -478,7 +415,7 @@ func (c *Collector) collectFirewall() {
 				pfKey := fmt.Sprintf("PortForwarding.%d", iid)
 				pfData := c.safeGet(pfKey, "FirewallSetupPage-PortForwarding", fastInterval)
 				if pfData != nil {
-					if pfArr, pfErr := toArr(pfData); pfErr == nil {
+					if pfArr, pfErr := client.ToArr(pfData); pfErr == nil {
 						totalPF += float64(len(pfArr))
 					}
 				}
@@ -490,7 +427,7 @@ func (c *Collector) collectFirewall() {
 	// DMZ
 	dmzData := c.safeGet("DmzHostConfig", "FirewallSetupPage-Dmz", fastInterval)
 	if dmzData != nil {
-		arr, err := toArr(dmzData)
+		arr, err := client.ToArr(dmzData)
 		if err == nil {
 			for _, item := range arr {
 				entry, ok := item.(map[string]any)
@@ -510,7 +447,7 @@ func (c *Collector) collectFirewall() {
 	// UPnP
 	upnpData := c.safeGet("UPnPCfg", "FirewallSetupPage-UPnP", fastInterval)
 	if upnpData != nil {
-		obj, err := toObj(upnpData)
+		obj, err := client.ToObj(upnpData)
 		if err == nil {
 			if getBool(obj, "enable") {
 				upnpEnabled.Set(1)
@@ -523,7 +460,7 @@ func (c *Collector) collectFirewall() {
 	// URL filter
 	urlData := c.safeGet("URLFilterObject", "FirewallSetupPage-UrlFilter", fastInterval)
 	if urlData != nil {
-		arr, err := toArr(urlData)
+		arr, err := client.ToArr(urlData)
 		if err == nil {
 			urlFilterRulesTotal.Set(float64(len(arr)))
 		}
@@ -535,7 +472,7 @@ func (c *Collector) collectNTP() {
 	if data == nil {
 		return
 	}
-	obj, err := toObj(data)
+	obj, err := client.ToObj(data)
 	if err != nil {
 		log.Printf("TimeServer: %v", err)
 		return
@@ -556,7 +493,7 @@ func (c *Collector) collectARP() {
 	if data == nil {
 		return
 	}
-	arr, err := toArr(data)
+	arr, err := client.ToArr(data)
 	if err != nil {
 		log.Printf("ARPStatus: %v", err)
 		return
@@ -569,7 +506,7 @@ func (c *Collector) collectAutoReboot() {
 	if data == nil {
 		return
 	}
-	obj, err := toObj(data)
+	obj, err := client.ToObj(data)
 	if err != nil {
 		log.Printf("AutoRebootObj: %v", err)
 		return

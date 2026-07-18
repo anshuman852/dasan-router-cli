@@ -15,12 +15,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/dasan-exporter
+  IMAGE_NAME: ${{ github.repository_owner }}/dasan
 
 jobs:
-  # ------------------------------------------------------------------
-  # Build each architecture natively (no QEMU / emulation overhead)
-  # ------------------------------------------------------------------
   build:
     runs-on: ubuntu-latest
     strategy:
@@ -77,9 +74,6 @@ jobs:
           path: ${{ runner.temp }}/digests/
           retention-days: 1
 
-  # ------------------------------------------------------------------
-  # Merge per-arch digests into a single multi-arch manifest
-  # ------------------------------------------------------------------
   merge:
     runs-on: ubuntu-latest
     needs: build
@@ -121,13 +115,11 @@ jobs:
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
 
-          # Collect source digests
           SOURCES=""
           for f in "${{ runner.temp }}"/digests/*; do
             [ -f "$f" ] && SOURCES="$SOURCES ${IMAGE}@$(cat "$f")"
           done
 
-          # Collect target tags (metadata-action outputs comma-separated list)
           TAGS=""
           IFS=',' read -ra TAG_LIST <<< "${{ steps.meta.outputs.tags }}"
           for t in "${TAG_LIST[@]}"; do

@@ -3,43 +3,38 @@
 Fast CLI for the Dasan/Airtel H660GM-A GPON router, replacing the slow web UI
 at `https://192.168.1.1/status/device-info`. Talks directly to the router's
 internal JSON API (`/dm/tr98/`, `/dm/sys/`, `/bin/`) that the Vue.js frontend
-uses. Built with [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/)
-for a discoverable, nicely formatted command tree.
+uses. Built with [Cobra](https://github.com/spf13/cobra).
 
-Dependencies: `typer`, `rich` (`pip install typer rich` if not already present).
+### Prometheus Exporter
 
-### Prometheus Exporter (Go)
-
-Also ships a **Prometheus metrics exporter** written in Go — ~7 MB static binary,
-<1 MB memory at idle, runs from `scratch` Docker image. Polls the router API and
-exposes 21 metrics for Grafana dashboards.
+Also ships a **Prometheus metrics exporter** as a subcommand (`dasan serve`) —
+~7 MB static binary, <1 MB memory at idle, runs from `scratch` Docker image.
+Polls the router API and exposes 21 metrics for Grafana dashboards.
 
 ```bash
 # Build from source
-cd go-exporter && go build -o dasan-exporter .
+go build -o dasan ./cmd/dasan/
 
-# Run with env vars
+# Run CLI commands
+./dasan status info
+./dasan wifi list
+
+# Or run the exporter
 export DASAN_HOST=192.168.1.1
 export DASAN_USERNAME=admin
 export DASAN_PASSWORD=yourpassword
-./dasan-exporter -port 9800 -interval 60
+./dasan serve --port 9800 --interval 60
 
 # Or Docker (multi-arch: amd64 + arm64, ~7 MB image)
-docker run -d --name dasan-exporter \
+docker run -d --name dasan \
   -e DASAN_HOST=192.168.1.1 \
   -e DASAN_USERNAME=admin \
   -e DASAN_PASSWORD=yourpassword \
   -p 9800:9800 \
-  ghcr.io/anshuman852/dasan-exporter:latest
+  ghcr.io/anshuman852/dasan:latest
 ```
 
-Point Prometheus at `http://<host>:9800/metrics`, then import
-`go-exporter/dasan-dashboard.json` into Grafana for a pre-built dashboard with
-gauges, timeseries, and status indicators.
-
-**CLI flags:** `-host` (env `DASAN_HOST`, default `192.168.1.1`), `-username`
-(env `DASAN_USERNAME`), `-password` (env `DASAN_PASSWORD`), `-port` (default
-`9800`), `-interval` seconds (default `60`).
+Point Prometheus at `http://<host>:9800/metrics`.
 
 **Scrape frequency:** Fast-moving objects (CPU, memory, WAN, PON, WiFi) update
 every scrape cycle. Slow objects (ARP table, DHCP leases) update every 5 minutes
@@ -48,46 +43,48 @@ to reduce router load.
 ## Usage
 
 ```
-python dasan.py --help                       # full command tree
-python dasan.py status info                  # device info, uptime, CPU/mem/temp, PON optical stats
-python dasan.py status wan                   # WAN connections (internet/voice VLANs, IPs)
-python dasan.py status lan                   # LAN port link status
-python dasan.py status clients               # DHCP leases / connected devices
+dasan --help                           # full command tree
+dasan status info                      # device info, uptime, CPU/mem/temp, PON optical stats
+dasan status wan                       # WAN connections (internet/voice VLANs, IPs)
+dasan status lan                       # LAN port link status
+dasan status clients                   # DHCP leases / connected devices
 
-python dasan.py wifi list                    # SSIDs (--show-password to reveal passphrases)
-python dasan.py wifi set 1 --ssid MyWifi --password NewPass123
-python dasan.py wifi extra macfilter-list    # MAC allow/deny list per band
-python dasan.py wifi extra schedule-show     # WiFi auto-refresh schedule
-python dasan.py wifi extra mesh-status       # mesh config (needs mesh-capable hardware)
+dasan wifi list                        # SSIDs (--show-password to reveal passphrases)
+dasan wifi set 1 --ssid MyWifi --password NewPass123
+dasan wifi macfilter-list              # MAC allow/deny list per band
+dasan wifi schedule-show               # WiFi auto-refresh schedule
+dasan wifi mesh-status                 # mesh config (needs mesh-capable hardware)
 
-python dasan.py firewall port-forwarding                 # list rules (--wan to pick a WAN iid)
-python dasan.py firewall port-forwarding-add --ext-port 8080 --local-ip 192.168.1.50
-python dasan.py firewall port-forwarding-delete <eid>
-python dasan.py firewall dmz / dmz-enable / dmz-disable / dmz-set-host
-python dasan.py firewall port-triggering[-add|-delete]
-python dasan.py firewall url-filter[-add|-delete]
-python dasan.py firewall parental-control[-add|-delete]  # weekly per-day blocking window
-python dasan.py firewall upnp / upnp-enable / upnp-disable
-python dasan.py firewall mac-anti-spoofing / ip-anti-spoofing
+dasan firewall port-forwarding                        # list rules (--wan to pick a WAN iid)
+dasan firewall port-forwarding-add --ext-port 8080 --local-ip 192.168.1.50
+dasan firewall port-forwarding-delete <eid>
+dasan firewall dmz / dmz-enable / dmz-disable / dmz-set-host
+dasan firewall port-triggering[-add|-delete]
+dasan firewall url-filter[-add|-delete]
+dasan firewall parental-control[-add|-delete]          # weekly per-day blocking window
+dasan firewall upnp / upnp-enable / upnp-disable
+dasan firewall mac-anti-spoofing / ip-anti-spoofing
 
-python dasan.py maintenance administration    # web account ports/timeout/lockout
-python dasan.py maintenance ntp               # NTP servers & sync status
-python dasan.py maintenance firmware          # current HW/SW version
-python dasan.py maintenance logs --lines 100  # recent syslog
-python dasan.py maintenance backup            # download a config backup file
-python dasan.py maintenance auto-reboot / port-mirroring / snmp / syslog-configuration
+dasan maintenance admin                 # web account ports/timeout/lockout
+dasan maintenance ntp                    # NTP servers & sync status
+dasan maintenance firmware               # current HW/SW version
+dasan maintenance logs --lines 100       # recent syslog
+dasan maintenance backup                 # download a config backup file
+dasan maintenance auto-reboot / port-mirroring / snmp / syslog-configuration
 
-python dasan.py advanced wan-connections      # full WAN detail incl. PPPoE creds (--show-password)
-python dasan.py advanced arp / arp-set-timeout
-python dasan.py advanced ddns / ddns-set
-python dasan.py advanced static-routing[-add[-v6]|-delete[-v6]]
+dasan advanced wan-connections           # full WAN detail incl. PPPoE creds (--show-password)
+dasan advanced arp / arp-set-timeout
+dasan advanced ddns / ddns-set
+dasan advanced static-routing[-add|-delete]
 
-python dasan.py reboot                        # asks for confirmation; -y to skip
-python dasan.py raw get DeviceInfo            # escape hatch for any objs=... endpoint
+dasan reboot                             # asks for confirmation; -y to skip
+dasan raw get DeviceInfo                 # escape hatch for any objs=... endpoint
+dasan serve                              # start Prometheus metrics exporter
+dasan version                            # print version
 ```
 
-Credentials: pass `--user`/`--password`, set `$DASAN_USER`/`$DASAN_PASS`, or
-you'll be prompted. The auth token is cached in `~/.dasan-cli-session.json`
+Credentials: pass `--user`/`--password`, set `DASAN_USER`/`DASAN_PASS`, or
+you'll be prompted. The auth token is cached in `~/.dasan-session.json`
 (mode 600) and reused until it expires (~30 min), so most commands only need
 to log in once per session.
 
@@ -96,33 +93,37 @@ to log in once per session.
 ## Project layout
 
 ```
-dasan.py               thin entry point -> dasan_cli.main
-  dasan_cli/
-  core.py              shared HTTP client: auth, CSRF, session cache, table rendering
-  status.py            device info, WAN/LAN, DHCP clients
-  wifi.py               SSID list/set (WLANConfiguration)
-  wifi_extra.py         MAC filter, auto-refresh schedule, mesh (nested under `wifi extra`)
-  firewall.py            port forwarding, DMZ, port triggering, URL/parental filters, UPnP, anti-spoofing
-  maintenance.py         administration, NTP, firmware info, logs, backup, SNMP, syslog
-  advanced.py            WAN connection detail, ARP, DDNS, static routing
-  main.py                wires every module's Typer app together
-go-exporter/
-  main.go              Prometheus exporter entrypoint
-  client.go             Dasan router API client (login, GET, JWT auth)
-  collector.go          21 Prometheus metrics + collection logic
-  dasan-dashboard.json  Grafana dashboard (import into Grafana 10+)
-Dockerfile              Multi-arch Go build → scratch (~7 MB image)
-.github/workflows/docker-publish.yml  CI: build & push to ghcr.io
+cmd/dasan/
+  main.go               entry point, cobra root command
+internal/
+  client/
+    client.go            enhanced API client: auth, CSRF, session cache, read/write/delete
+  collector/
+    collector.go          Prometheus metrics + collection logic
+  exporter/
+    serve.go              HTTP server + metrics endpoint
+  cli/
+    status.go             device info, WAN/LAN, DHCP clients
+    wifi.go               SSID list/set, MAC filter, auto-refresh schedule, mesh
+    firewall*.go          port forwarding, DMZ, port triggering, URL/parental filters, UPnP, anti-spoofing
+    maintenance.go         administration, NTP, firmware info, logs, backup, SNMP, syslog
+    advanced.go            WAN connection detail, ARP, DDNS, static routing
+    context.go             global client reference
+    utils.go               table rendering, formatting helpers
+Dockerfile                 Multi-arch Go build → scratch (~12 MB image)
+.github/workflows/
+  docker-publish.yml       CI: build & push Docker image to ghcr.io
+  release.yml              CI: GoReleaser cross-platform binaries
 ```
 
 ## Known limitations (found via live testing against one H660GM-A unit)
 
 - **UPnP enable/disable** (`firewall upnp-enable/-disable`) and **MAC filter
-  add** (`wifi extra macfilter-add`): the router accepts the write (HTTP 200,
+  add** (`wifi macfilter-add`): the router accepts the write (HTTP 200,
   no error) but does not actually persist the new value on this firmware/account.
   Both commands detect this and print a warning rather than falsely claiming
   success — verify any change in the web UI before relying on it.
-- **WiFi mesh** (`wifi extra mesh-*`): this unit has no mesh peers/hardware, so
+- **WiFi mesh** (`wifi mesh-*`): this unit has no mesh peers/hardware, so
   every mesh endpoint returns a clean `403 Unauthorized URL`. The commands are
   implemented from the same JS the web UI uses and should work on mesh-capable
   hardware/firmware.
@@ -136,11 +137,8 @@ Dockerfile              Multi-arch Go build → scratch (~7 MB image)
   blank — an empty `MyHostName` is rejected outright (error 9006, "Choose IP
   address value") and an empty `Username` returns success but silently keeps
   the old value. Pass a real replacement instead of `""` if you need to change
-  these. (Confirmed live: `MyHostName`/`Username` on this unit currently hold
-  test values `myhome.no-ip.org` / `testuser` from write-path verification —
-  harmless since `Enable` was left `false` throughout, but not the original
-  blank state; reset via the web UI if you want it pristine.)
-- **`advanced static-routing-add[-v6]/-delete[-v6]`**: implemented directly
+  these.
+- **`advanced static-routing-add/-delete`**: implemented directly
   from the reverse-engineered JS (field names `DestIp`/`Netmask`/`Gateway`/
   `Interface`/`Metric` for IPv4, `dstIp`/`prefixLen`/`gateway`/`intfName` for
   IPv6) but **not live-tested** — the sandbox's permission classifier blocked

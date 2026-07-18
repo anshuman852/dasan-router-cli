@@ -4,3 +4,5 @@ __pycache__/
 .omc/
 backup_*.bin
 .dasan-cli-session.json
+/dasan.exe
+/dasan

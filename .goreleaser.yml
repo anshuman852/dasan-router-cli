@@ -3,12 +3,12 @@
 # =============================================================================
 version: 2
 
-project_name: dasan-exporter
+project_name: dasan
 
 builds:
-  - id: dasan-exporter
-    dir: go-exporter
-    binary: dasan-exporter
+  - id: dasan
+    dir: cmd/dasan
+    binary: dasan
     env:
       - CGO_ENABLED=0
     goos:
@@ -31,9 +31,9 @@ builds:
 archives:
   - id: default
     builds:
-      - dasan-exporter
+      - dasan
     name_template: >-
-      dasan-exporter_
+      dasan_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
@@ -41,7 +41,8 @@ archives:
       - goos: windows
         format: zip
     files:
-      - go-exporter/dasan-dashboard.json
+      - dasan-dashboard.json
+      - README.md
 
 checksum:
   name_template: "checksums.txt"

@@ -2,61 +2,62 @@
 
 ## Project overview
 
-`dasan-cli` is a CLI tool and Prometheus exporter for the Dasan/Airtel H660GM-A GPON router. It talks directly to the router's internal JSON API (`/dm/tr98/`, `/dm/sys/`, `/bin/`) — the same API the Vue.js web UI uses. Two artifacts ship from this repo:
+`dasan-cli` is a CLI tool and Prometheus exporter for the Dasan/Airtel H660GM-A GPON router. It talks directly to the router's internal JSON API (`/dm/tr98/`, `/dm/sys/`, `/bin/`) — the same API the Vue.js web UI uses. A single Go binary ships both the CLI and the Prometheus exporter:
 
-1. **Python CLI** (`dasan_cli/`) — read/write router configuration from the terminal (status, WiFi, firewall, DHCP, etc.)
-2. **Go Prometheus exporter** (`go-exporter/`) — scrape the router API and expose metrics at `/metrics`
+- **CLI** (`cmd/dasan/`) — read/write router configuration from the terminal (status, WiFi, firewall, DHCP, etc.)
+- **Exporter** (`internal/exporter/`) — scrape the router API and expose metrics at `/metrics`
 
 ## Technology stack
 
 | Component | Language | Key deps |
 |-----------|----------|----------|
-| CLI | Python 3 | `typer`, `rich` |
-| Exporter | Go 1.23+ | `prometheus/client_golang` |
-| CI | GitHub Actions | QEMU, Buildx, semantic-release |
-| Registry | GHCR | `ghcr.io/anshuman852/dasan-exporter` |
+| CLI + Exporter | Go 1.23+ | cobra, prometheus/client_golang |
+| CI | GitHub Actions | Docker Buildx, GoReleaser |
+| Registry | GHCR | `ghcr.io/anshuman852/dasan` |
 
 ## Directory structure
 
 ```
-dasan.py                          # CLI entry point
-dasan_cli/
-  core.py                         # HTTP client, auth (JWT), CSRF, session cache
-  status.py                       # Device info, WAN, LAN, DHCP clients
-  wifi.py / wifi_extra.py         # SSID config, MAC filter, mesh
-  firewall.py                     # Port forwarding, DMZ, UPnP, URL filter, anti-spoofing
-  maintenance.py                  # Admin, NTP, logs, firmware, SNMP
-  advanced.py                     # WAN detail, ARP, DDNS, static routes
-  main.py                         # Typer app wiring
-go-exporter/
-  main.go                         # Entry point, HTTP server, scrape loop
-  client.go                       # Dasan API client (JWT login, GET, TLS skip)
-  collector.go                    # 21 Prometheus metrics, interval-gated collection
-  dasan-dashboard.json            # Pre-built Grafana dashboard
+cmd/dasan/
+  main.go                         # Entry point, cobra root command
+internal/
+  client/
+    client.go                     # Enhanced API client: auth, CSRF, session cache, read/write/delete
+  collector/
+    collector.go                  # 21 Prometheus metrics, interval-gated collection
+  exporter/
+    serve.go                      # HTTP server + metrics endpoint
+  cli/
+    context.go                    # Global client reference
+    utils.go                      # Table rendering, formatting helpers
+    status.go                     # Device info, WAN, LAN, DHCP clients
+    wifi.go                       # SSID config, MAC filter, mesh
+    firewall*.go                  # Port forwarding, DMZ, UPnP, URL filter, anti-spoofing
+    maintenance.go                # Admin, NTP, logs, firmware, SNMP
+    advanced.go                   # WAN detail, ARP, DDNS, static routes
 Dockerfile                        # Multi-stage Go build → scratch (~12 MB)
 .github/workflows/
   docker-publish.yml              # Build + push multi-arch to GHCR
-  release.yml                     # semantic-release (auto version bumps)
-.releaserc.json                   # semantic-release config
+  release.yml                     # GoReleaser (cross-platform binaries)
 ```
 
 ## Router API patterns
 
-**Auth:** `POST /dm/sys/?cmd=Login` returns a JWT. Send as `Authorization: Bearer <token>`. Session cached in `~/.dasan-cli-session.json` (~30 min expiry).
+**Auth:** `POST /dm/sys/?cmd=Login` returns a JWT. Send as `Authorization: Bearer <token>`. Session cached in `~/.dasan-session.json` (~30 min expiry).
 
 **Reads:** `GET /dm/tr98/?objs=<ObjectName>&page=<PageName>`. Response: `{"<ObjectName>":{"status_code":200,"data":{...}}}`. For list objects, `data` is an array. The response key is always the bare object name (e.g. `PortForwarding` even when querying `PortForwarding.2`).
 
 **Writes:** Require a CSRF token from a preceding GET. Read `csrf` response header, send as `X-Csrf-Token` on the POST/DELETE. List objects expect the full record wrapped in an array `{"Object":{"data":[{...}]}}` — even for single items. DELETE echoes the record back.
 
-**TLS:** Router uses a self-signed certificate. Skip verification (`InsecureSkipVerify: true` in Go, `ssl.CERT_NONE` in Python).
+**TLS:** Router uses a self-signed certificate. Skip verification (`InsecureSkipVerify: true`).
 
-**Page names:** Required by the router for per-page permission checks. Known pages are in `dasan_cli/core.py` `PAGES` dict. Some objects (static routing) use `?api=` instead of `?objs=`.
+**Page names:** Required by the router for per-page permission checks. Known pages are in `internal/client/client.go` `PAGES` map. Some objects (static routing) use `?api=` instead of `?objs=`.
 
 **Namespaces:** `/dm/tr98/` (config objects), `/dm/sys/` (system commands), `/bin/` (binary/text downloads).
 
 ## Exporter collection logic
 
-- **Fast objects** (every 60s): DeviceInfo, PonPortStatus, WAN connections, LAN ports, WiFi, firewall, NTP, auto-reboot
+- **Fast objects** (every scrape): DeviceInfo, PonPortStatus, WAN connections, LAN ports, WiFi, firewall, NTP, auto-reboot
 - **Slow objects** (every 300s): DHCP leases, ARP table
 - Each object query is independent — a single failure doesn't block the rest
 - Self-monitoring: `dasan_api_requests_total` (per object, success/error), `dasan_api_request_duration_seconds` (histogram)
@@ -65,36 +66,24 @@ Dockerfile                        # Multi-stage Go build → scratch (~12 MB)
 
 Push to `main` → Docker build (`linux/amd64`, `linux/arm64`) → push to GHCR with `latest` + `sha-*` tags.
 
-Push `v*.*.*` tag → same Docker build with semver tags (`1.2.3`, `1.2`, `1`). Tags are created automatically by `semantic-release` on every `main` push — no manual tagging needed.
-
-### Conventional commits
-
-**Every commit must follow the conventional commits format.** Semantic-release determines
-version bumps from commit messages — non-conventional messages are rejected.
-
-- `feat: add GPU metrics` → **minor** bump (new feature)
-- `fix: handle expired token` → **patch** bump (bug fix)
-- `feat!: drop Python exporter` or `BREAKING CHANGE:` in body → **major** bump
-- `chore: update CI config` → no bump (internal tooling)
-- `docs: update README` → no bump (documentation only)
-
-Prefix must be lowercase. Description must be in imperative mood. No capital letters or
-periods at the end of the prefix. History rewrites or force pushes must also follow this
-format — every commit on `main` is validated.
+Push `v*.*.*` tag → Docker build with semver tags + GoReleaser cross-platform binaries.
 
 ## Running locally
 
 ```bash
+# Build
+go build -o dasan ./cmd/dasan/
+
 # CLI
-python dasan.py status info
+./dasan status info
+./dasan wifi list
 
 # Exporter (Go)
-cd go-exporter && go build -o dasan-exporter .
-DASAN_HOST=192.168.1.1 DASAN_USERNAME=admin DASAN_PASSWORD=pass ./dasan-exporter
+DASAN_HOST=192.168.1.1 DASAN_USERNAME=admin DASAN_PASSWORD=pass ./dasan serve
 
 # Docker
-docker buildx build --platform linux/amd64 --load -t dasan-exporter .
-docker run -e DASAN_HOST=192.168.1.1 -e DASAN_USERNAME=admin -e DASAN_PASSWORD=pass -p 9800:9800 dasan-exporter
+docker buildx build --platform linux/amd64 --load -t dasan .
+docker run -e DASAN_HOST=192.168.1.1 -e DASAN_USERNAME=admin -e DASAN_PASSWORD=pass -p 9800:9800 dasan
 ```
 
 ## Boolean quirks
