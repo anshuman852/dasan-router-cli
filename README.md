@@ -8,6 +8,45 @@ for a discoverable, nicely formatted command tree.
 
 Dependencies: `typer`, `rich` (`pip install typer rich` if not already present).
 
+### Prometheus Exporter (new!)
+
+Also ships a **Prometheus metrics exporter** that polls the router API and exposes
+21 metrics for Grafana dashboards. Metrics include CPU/memory/temperature, PON
+optical power (RX/TX dBm), WAN connection status, LAN port speeds, DHCP/WiFi
+client counts, firewall rule counts, NTP sync, and more.
+
+```bash
+# Via env vars
+export DASAN_HOST=192.168.1.1
+export DASAN_USERNAME=admin
+export DASAN_PASSWORD=yourpassword
+python -m exporter.server
+
+# Or CLI args
+python -m exporter.server --host 192.168.1.1 --username admin --password yourpassword --port 9800
+
+# Or Docker (multi-arch: amd64 + arm64)
+docker run -d --name dasan-exporter \
+  -e DASAN_HOST=192.168.1.1 \
+  -e DASAN_USERNAME=admin \
+  -e DASAN_PASSWORD=yourpassword \
+  -p 9800:9800 \
+  ghcr.io/anshuman852/dasan-router-cli:latest
+```
+
+Point Prometheus at `http://<host>:9800/metrics`, then import
+`exporter/dasan-dashboard.json` into Grafana for a pre-built dashboard with
+gauges, timeseries, and status indicators.
+
+**Exporter options:** `--port` (default 9800), `--interval` seconds between
+scrapes (default 60), `--log-level` (DEBUG/INFO/WARNING/ERROR).
+
+**Scrape frequency:** Fast-moving objects (CPU, memory, WAN, PON, WiFi) update
+every scrape cycle. Slow objects (ARP table, DHCP leases) update every 5 minutes
+to reduce router load.
+
+Dependencies: `typer`, `rich`, `prometheus_client` (`pip install typer rich prometheus_client`).
+
 ## Usage
 
 ```
@@ -60,7 +99,7 @@ to log in once per session.
 
 ```
 dasan.py               thin entry point -> dasan_cli.main
-dasan_cli/
+  dasan_cli/
   core.py              shared HTTP client: auth, CSRF, session cache, table rendering
   status.py            device info, WAN/LAN, DHCP clients
   wifi.py               SSID list/set (WLANConfiguration)
@@ -69,6 +108,13 @@ dasan_cli/
   maintenance.py         administration, NTP, firmware info, logs, backup, SNMP, syslog
   advanced.py            WAN connection detail, ARP, DDNS, static routing
   main.py                wires every module's Typer app together
+exporter/
+  __init__.py
+  exporter.py          Prometheus metrics collector (21 metrics across 10 categories)
+  server.py            HTTP server for Prometheus scraping
+  dasan-dashboard.json  Grafana dashboard (import into Grafana 10+)
+Dockerfile              Multi-arch image (amd64 + arm64)
+.github/workflows/docker-publish.yml  CI: build & push to ghcr.io
 ```
 
 ## Known limitations (found via live testing against one H660GM-A unit)
