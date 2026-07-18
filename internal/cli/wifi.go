@@ -88,9 +88,7 @@ func newWifiListCmd() *cobra.Command {
 }
 
 func newWifiSetCmd() *cobra.Command {
-	var ssid, password string
-	var enable bool
-	var hasEnable bool
+	var ssid, password, radio string
 	cmd := &cobra.Command{
 		Use:   "set <iid>",
 		Short: "Update an SSID's name/password/radio state (read-modify-write)",
@@ -125,8 +123,11 @@ func newWifiSetCmd() *cobra.Command {
 			if password != "" {
 				target["KeyPassphrase"] = password
 			}
-			if hasEnable {
-				target["RadioEnabled"] = enable
+			switch radio {
+			case "on":
+				target["RadioEnabled"] = true
+			case "off":
+				target["RadioEnabled"] = false
 			}
 
 			return cl.Post("WLANConfiguration", "", []any{target})
@@ -134,8 +135,7 @@ func newWifiSetCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&ssid, "ssid", "", "new SSID name")
 	cmd.Flags().StringVar(&password, "key", "", "new WiFi passphrase")
-	cmd.Flags().BoolVar(&enable, "enable", false, "turn radio on")
-	cmd.Flags().BoolVar(&hasEnable, "enable-set", false, "use --enable flag")
+	cmd.Flags().StringVar(&radio, "radio", "", "turn radio on or off")
 	return cmd
 }
 

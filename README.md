@@ -50,7 +50,8 @@ dasan status lan                       # LAN port link status
 dasan status clients                   # DHCP leases / connected devices
 
 dasan wifi list                        # SSIDs (--show-password to reveal passphrases)
-dasan wifi set 1 --ssid MyWifi --key NewPass123
+dasan wifi set 1 --ssid MyWifi --key NewPass123        # rename
+dasan wifi set 2 --radio off                           # disable radio
 dasan wifi macfilter-list              # MAC allow/deny list per band
 dasan wifi schedule-show               # WiFi auto-refresh schedule
 dasan wifi mesh-status                 # mesh config (needs mesh-capable hardware)
