@@ -69,10 +69,18 @@ Push `v*.*.*` tag → same Docker build with semver tags (`1.2.3`, `1.2`, `1`). 
 
 ### Conventional commits
 
-Semantic-release determines version bumps from commit messages:
+**Every commit must follow the conventional commits format.** Semantic-release determines
+version bumps from commit messages — non-conventional messages are rejected.
+
 - `feat: add GPU metrics` → **minor** bump (new feature)
 - `fix: handle expired token` → **patch** bump (bug fix)
 - `feat!: drop Python exporter` or `BREAKING CHANGE:` in body → **major** bump
+- `chore: update CI config` → no bump (internal tooling)
+- `docs: update README` → no bump (documentation only)
+
+Prefix must be lowercase. Description must be in imperative mood. No capital letters or
+periods at the end of the prefix. History rewrites or force pushes must also follow this
+format — every commit on `main` is validated.
 
 ## Running locally
 
