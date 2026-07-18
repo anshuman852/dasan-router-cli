@@ -8,24 +8,23 @@ for a discoverable, nicely formatted command tree.
 
 Dependencies: `typer`, `rich` (`pip install typer rich` if not already present).
 
-### Prometheus Exporter (new!)
+### Prometheus Exporter (Go)
 
-Also ships a **Prometheus metrics exporter** that polls the router API and exposes
-21 metrics for Grafana dashboards. Metrics include CPU/memory/temperature, PON
-optical power (RX/TX dBm), WAN connection status, LAN port speeds, DHCP/WiFi
-client counts, firewall rule counts, NTP sync, and more.
+Also ships a **Prometheus metrics exporter** written in Go — ~7 MB static binary,
+<1 MB memory at idle, runs from `scratch` Docker image. Polls the router API and
+exposes 21 metrics for Grafana dashboards.
 
 ```bash
-# Via env vars
+# Build from source
+cd go-exporter && go build -o dasan-exporter .
+
+# Run with env vars
 export DASAN_HOST=192.168.1.1
 export DASAN_USERNAME=admin
 export DASAN_PASSWORD=yourpassword
-python -m exporter.server
+./dasan-exporter -port 9800 -interval 60
 
-# Or CLI args
-python -m exporter.server --host 192.168.1.1 --username admin --password yourpassword --port 9800
-
-# Or Docker (multi-arch: amd64 + arm64)
+# Or Docker (multi-arch: amd64 + arm64, ~7 MB image)
 docker run -d --name dasan-exporter \
   -e DASAN_HOST=192.168.1.1 \
   -e DASAN_USERNAME=admin \
@@ -35,17 +34,16 @@ docker run -d --name dasan-exporter \
 ```
 
 Point Prometheus at `http://<host>:9800/metrics`, then import
-`exporter/dasan-dashboard.json` into Grafana for a pre-built dashboard with
+`go-exporter/dasan-dashboard.json` into Grafana for a pre-built dashboard with
 gauges, timeseries, and status indicators.
 
-**Exporter options:** `--port` (default 9800), `--interval` seconds between
-scrapes (default 60), `--log-level` (DEBUG/INFO/WARNING/ERROR).
+**CLI flags:** `-host` (env `DASAN_HOST`, default `192.168.1.1`), `-username`
+(env `DASAN_USERNAME`), `-password` (env `DASAN_PASSWORD`), `-port` (default
+`9800`), `-interval` seconds (default `60`).
 
 **Scrape frequency:** Fast-moving objects (CPU, memory, WAN, PON, WiFi) update
 every scrape cycle. Slow objects (ARP table, DHCP leases) update every 5 minutes
 to reduce router load.
-
-Dependencies: `typer`, `rich`, `prometheus_client` (`pip install typer rich prometheus_client`).
 
 ## Usage
 
@@ -108,12 +106,12 @@ dasan.py               thin entry point -> dasan_cli.main
   maintenance.py         administration, NTP, firmware info, logs, backup, SNMP, syslog
   advanced.py            WAN connection detail, ARP, DDNS, static routing
   main.py                wires every module's Typer app together
-exporter/
-  __init__.py
-  exporter.py          Prometheus metrics collector (21 metrics across 10 categories)
-  server.py            HTTP server for Prometheus scraping
+go-exporter/
+  main.go              Prometheus exporter entrypoint
+  client.go             Dasan router API client (login, GET, JWT auth)
+  collector.go          21 Prometheus metrics + collection logic
   dasan-dashboard.json  Grafana dashboard (import into Grafana 10+)
-Dockerfile              Multi-arch image (amd64 + arm64)
+Dockerfile              Multi-arch Go build → scratch (~7 MB image)
 .github/workflows/docker-publish.yml  CI: build & push to ghcr.io
 ```
 
