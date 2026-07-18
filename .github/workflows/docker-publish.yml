@@ -55,7 +55,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           provenance: false
           sbom: false
-          push: true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
