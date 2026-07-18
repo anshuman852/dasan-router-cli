@@ -36,59 +36,71 @@ func NewWifiCmd() *cobra.Command {
 
 func newWifiListCmd() *cobra.Command {
 	var showPassword bool
+	var band string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Show all configured SSIDs",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl := getClient(cmd)
-			data, err := cl.Get("WLANConfiguration", "")
-			if err != nil {
-				return err
+			type bandInfo struct{ obj, label string }
+			bands := []bandInfo{{"WLANConfiguration", "2.4GHz"}}
+			if band != "2.4ghz" {
+				bands = append(bands, bandInfo{"WLAN11acConfiguration", "5GHz"})
 			}
-			arr, err := client.ToArr(data)
-			if err != nil {
-				return err
+			if band == "5ghz" {
+				bands = []bandInfo{{"WLAN11acConfiguration", "5GHz"}}
 			}
+
 			rows := [][]string{}
-			for _, item := range arr {
-				s, ok := item.(map[string]any)
-				if !ok {
+			for _, b := range bands {
+				data, err := cl.Get(b.obj, "")
+				if err != nil {
+					continue // 5GHz may 403 on some hardware
+				}
+				arr, err := client.ToArr(data)
+				if err != nil {
 					continue
 				}
-				pw := client.GetStr(s, "KeyPassphrase")
-				var masked string
-				if showPassword {
-					masked = pw
-				} else {
-					masked = MaskPassword(pw)
+				for _, item := range arr {
+					s, ok := item.(map[string]any)
+					if !ok {
+						continue
+					}
+					pw := client.GetStr(s, "KeyPassphrase")
+					masked := MaskPassword(pw)
+					if showPassword {
+						masked = pw
+					}
+					radioStatus := "down"
+					if client.GetBool(s, "RadioEnabled") {
+						radioStatus = "up"
+					}
+					visibility := "hidden"
+					if client.GetBool(s, "SSIDAdvertisementEnabled") {
+						visibility = "visible"
+					}
+					rows = append(rows, []string{
+						b.label,
+						Ftoa(client.GetFloat(s, "iid")),
+						client.GetStr(s, "SSID"),
+						radioStatus,
+						client.GetStr(s, "Security"),
+						masked,
+						visibility,
+					})
 				}
-				radioStatus := "down"
-				if client.GetBool(s, "RadioEnabled") {
-					radioStatus = "up"
-				}
-				visibility := "hidden"
-				if client.GetBool(s, "SSIDAdvertisementEnabled") {
-					visibility = "visible"
-				}
-				rows = append(rows, []string{
-					Ftoa(client.GetFloat(s, "iid")),
-					client.GetStr(s, "SSID"),
-					radioStatus,
-					client.GetStr(s, "Security"),
-					masked,
-					visibility,
-				})
 			}
-			PrintTable([]string{"iid", "ssid", "radio", "security", "password", "broadcast"}, rows)
+			PrintTable([]string{"band", "iid", "ssid", "radio", "security", "password", "broadcast"}, rows)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&showPassword, "show-password", false, "reveal WiFi passphrases")
+	cmd.Flags().StringVar(&band, "band", "all", "show all, 2.4ghz, or 5ghz")
 	return cmd
 }
 
 func newWifiSetCmd() *cobra.Command {
-	var ssid, password, radio string
+	var ssid, password, radio, band string
 	cmd := &cobra.Command{
 		Use:   "set <iid>",
 		Short: "Update an SSID's name/password/radio state (read-modify-write)",
@@ -97,7 +109,13 @@ func newWifiSetCmd() *cobra.Command {
 			cl := getClient(cmd)
 			iid := args[0]
 
-			data, err := cl.Get("WLANConfiguration", "")
+			// Map band to object name
+			obj := bandObjects[band]
+			if obj == "" {
+				obj = "WLANConfiguration"
+			}
+
+			data, err := cl.Get(obj, "")
 			if err != nil {
 				return err
 			}
@@ -114,7 +132,7 @@ func newWifiSetCmd() *cobra.Command {
 				}
 			}
 			if target == nil {
-				return fmt.Errorf("no WLAN with iid=%s", iid)
+				return fmt.Errorf("no WLAN with iid=%s on band %s (object %s)", iid, band, obj)
 			}
 
 			if ssid != "" {
@@ -130,12 +148,13 @@ func newWifiSetCmd() *cobra.Command {
 				target["RadioEnabled"] = false
 			}
 
-			return cl.Post("WLANConfiguration", "", []any{target})
+			return cl.Post(obj, "", []any{target})
 		},
 	}
 	cmd.Flags().StringVar(&ssid, "ssid", "", "new SSID name")
 	cmd.Flags().StringVar(&password, "key", "", "new WiFi passphrase")
 	cmd.Flags().StringVar(&radio, "radio", "", "turn radio on or off")
+	cmd.Flags().StringVar(&band, "band", "2.4ghz", "WiFi band (2.4ghz or 5ghz)")
 	return cmd
 }
 
