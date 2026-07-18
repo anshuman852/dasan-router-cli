@@ -1,0 +1,38 @@
+# =============================================================================
+# Automatic semantic versioning via conventional commits
+# =============================================================================
+# Pushing to main with conventional commit messages automatically:
+#   1. Determines the next version bump (major/minor/patch)
+#   2. Creates a git tag (vX.Y.Z)
+#   3. Publishes a GitHub release with changelog
+#
+# Commit format:  https://www.conventionalcommits.org/
+#   feat: add WiFi client counter    → minor bump
+#   fix: handle expired JWT token    → patch bump
+#   feat!: drop support for Python   → major bump (breaking change)
+# =============================================================================
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  semantic-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push tags + create release
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for commit analysis
+
+      - name: Run semantic-release
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

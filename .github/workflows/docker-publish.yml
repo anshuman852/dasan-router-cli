@@ -1,5 +1,7 @@
 # =============================================================================
-# Build multi-arch Docker image, push to GHCR, and create GitHub releases
+# Build multi-arch Docker image and push to GHCR
+# =============================================================================
+# Releases are handled separately by the semantic-release workflow.
 # =============================================================================
 name: docker-publish
 
@@ -14,9 +16,6 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/dasan-exporter
 
 jobs:
-  # ------------------------------------------------------------------
-  # Build and push multi-arch Docker image
-  # ------------------------------------------------------------------
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -64,20 +63,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  # ------------------------------------------------------------------
-  # Create GitHub release with auto-generated changelog (tags only)
-  # ------------------------------------------------------------------
-  release:
-    needs: build-and-push
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          make_latest: true
