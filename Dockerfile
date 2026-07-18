@@ -33,8 +33,8 @@ FROM python:3.11-alpine
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Create a non-root user
-RUN adduser -S -u 1000 dasan
+# Create a non-root user and group
+RUN addgroup -S dasan && adduser -S -u 1000 -G dasan dasan
 
 WORKDIR /app
 
