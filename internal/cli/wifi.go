@@ -129,11 +129,11 @@ func newWifiSetCmd() *cobra.Command {
 				target["RadioEnabled"] = enable
 			}
 
-			return cl.Post("WLANConfiguration", "", target)
+			return cl.Post("WLANConfiguration", "", []any{target})
 		},
 	}
 	cmd.Flags().StringVar(&ssid, "ssid", "", "new SSID name")
-	cmd.Flags().StringVar(&password, "password", "", "new WiFi passphrase")
+	cmd.Flags().StringVar(&password, "key", "", "new WiFi passphrase")
 	cmd.Flags().BoolVar(&enable, "enable", false, "turn radio on")
 	cmd.Flags().BoolVar(&hasEnable, "enable-set", false, "use --enable flag")
 	return cmd
